@@ -13,12 +13,14 @@ import GHC.Generics
 import Data.Monoid ((<>))
 import Data.Char (isAlphaNum, toLower)
 import System.FilePath ((</>))
+import System.IO (withFile, IOMode(ReadMode))
 
 data HACommand = HABuild FilePath
                | HAQuery String
+               | HADump FilePath
 
 haCommand :: O.Parser HACommand
-haCommand = haBuild <|> haQuery
+haCommand = haBuild <|> haQuery <|> haDump
   where haBuild = HABuild <$>
           O.strOption (O.long "build"
                         <> O.metavar "DIR"
@@ -28,6 +30,10 @@ haCommand = haBuild <|> haQuery
                         <> O.long "query"
                         <> O.metavar "QUERY"
                         <> O.help "Query index with a boolean expression")
+        haDump = HADump <$>
+          O.strOption (O.long "dump"
+                        <> O.metavar "DIR"
+                        <> O.help "Dump index build in specified directory")
 
 parseHACommand :: IO HACommand
 parseHACommand = O.execParser $ O.info (O.helper <*> haCommand) O.fullDesc
@@ -58,6 +64,16 @@ buildIndex dir = do
  where updateI idx (f,i) = readFile (dir </> f) >>=
          return . mergeI idx . map (,[i]) . normTokens
 
+dumpIndex :: FilePath -> IO ()
+dumpIndex dir = do
+  bytes <- B.readFile (dir </> "haindex")
+  case decode bytes of
+    (Left str) -> putStrLn $! "Error: " ++ str
+    (Right (HAIndex ii ss)) -> mapM_ writeEntry ii >> mapM_ listFile (zip ss [1..])
+  where
+   writeEntry (s,is) = putStrLn $! s ++ ": " ++ show is
+   listFile   (f,i)  = putStrLn $! show i ++ ": " ++ (dir </> f)
+
 runQuery :: String -> IO ()
 runQuery = undefined
 
@@ -67,4 +83,5 @@ main = do
   case cmd of
     (HABuild dir) -> buildIndex dir
     (HAQuery str) -> runQuery str
+    (HADump dir)  -> dumpIndex dir
   return ()
